@@ -28,18 +28,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: nttld/setup-ndk@v1
-        id: ndk
-        with:
-          ndk-version: r27c
-          local-cache: true
+      # The runner ships an NDK already. Use it rather than downloading one:
+      # a third party action with a local cache can restore a half populated
+      # directory, which fails later and confusingly at compiler detection.
+      - name: locate the NDK
+        run: |
+          NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          test -n "$NDK" || { echo "no NDK on this runner"; exit 1; }
+          CLANG="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++"
+          test -x "$CLANG" || { echo "NDK at $NDK has no clang++ at $CLANG"; ls -la "$NDK"; exit 1; }
+          echo "NDK=$NDK" >> "$GITHUB_ENV"
+          echo "using NDK $NDK"
 
       - name: configure
-        env:
-          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           cmake -S . -B build-${{ matrix.abi }} \
-            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=${{ matrix.abi }} \
             -DANDROID_PLATFORM=android-21 \
             -DANDROID_STL=c++_shared \
@@ -50,7 +54,7 @@ jobs:
 
       - name: check the entry points are exported
         run: |
-          NM="$(find "${{ steps.ndk.outputs.ndk-path }}" -name 'llvm-nm' | head -1)"
+          NM="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
           "$NM" --dynamic --defined-only build-${{ matrix.abi }}/libjpr.so | grep -E 'mod_init|mod_preinit'
 
       - name: stage the release layout
