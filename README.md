@@ -24,8 +24,24 @@ next to it:
 ```
 
 On macOS the mods directory is
-`~/Library/Application Support/mcpelauncher/mods/`. The launcher also accepts
-extra directories with `--mods dir1,dir2`.
+`~/Library/Application Support/mcpelauncher/mods/` — the launcher resolves it
+through `NSApplicationSupportDirectory`
+(`mcpelauncher-common/src/path_helper_osx.mm`). The launcher also accepts extra
+directories with `--mods dir1,dir2`.
+
+**Pick the ABI that matches the APK, not the host CPU.** The launcher chooses
+the APK ABI from its own build (`PathHelper::getAbiDir`), so an Apple Silicon
+Mac runs `arm64-v8a` and a desktop Linux install usually runs `x86_64`.
+
+### A note on Apple Silicon
+
+The game's text pages are mapped `MAP_JIT` there, so `mprotect` to RWX is
+refused and the only way to write a jump is the launcher's
+`mcpelauncher_patch`, which wraps the write in `pthread_jit_write_protect_np`.
+The mod cannot detect the platform — it is an Android ELF, so `__APPLE__` is
+never defined in its own build — so `install()` tries both routes and then
+**verifies the bytes landed by reading them back**, refusing the hook if they
+did not. Key injection does not patch anything and is unaffected.
 
 The launcher loads every `.so` in that directory at startup and calls
 `mod_preinit` before `libminecraftpe.so` is mapped and `mod_init` after

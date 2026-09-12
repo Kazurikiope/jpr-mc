@@ -54,13 +54,23 @@ void* allocateExecutable(size_t size) {
     return memory;
 }
 
-// Writes `size` bytes into executable memory, going through the launcher's
-// patch helper when it is available so platforms with W^X are handled.
-void writeCode(void* destination, const void* source, size_t size) {
+// Writes `size` bytes into executable memory and confirms it landed.
+//
+// Two paths have to work here. On Linux the game's text is ordinary r-x
+// memory, so it needs mprotect first. On Apple Silicon it is mapped MAP_JIT
+// and mprotect to RWX is refused outright; there the launcher's
+// mcpelauncher_patch is the only way in, because it wraps the write in
+// pthread_jit_write_protect_np and invalidates the instruction cache.
+//
+// Rather than branching on a platform the mod cannot even detect — it is an
+// Android ELF, so __APPLE__ is never defined here — try both and verify by
+// reading the bytes back. Nothing downstream runs unless the write took.
+bool writeCode(void* destination, const void* source, size_t size) {
     if (api::patch)
         api::patch(destination, source, size);
     else
         memcpy(destination, source, size);
+    return memcmp(destination, source, size) == 0;
 }
 
 }  // namespace
@@ -124,20 +134,31 @@ bool install(void* target, void* replacement, void** originalOut, const char* na
     record.trampoline = trampoline;
     record.trampolineSize = trampolineSize;
 
-    if (!protectRange(code, displaced, PROT_READ | PROT_WRITE | PROT_EXEC)) {
-        JPR_ERROR("%s: mprotect failed on %p", name, target);
+    // Anything past the jump is unreachable, but keeping the original bytes
+    // there leaves the function disassemblable.
+    std::vector<uint8_t> patchBytes(displaced);
+    memcpy(patchBytes.data(), code, displaced);
+    arch::writeJump(patchBytes.data(), replacement);
+
+    // mprotect is expected to fail on Apple Silicon, where the game's text is
+    // MAP_JIT; that is not an error, mcpelauncher_patch handles it.
+    bool unprotected = protectRange(code, displaced, PROT_READ | PROT_WRITE | PROT_EXEC);
+    if (!unprotected && !api::patch) {
+        JPR_ERROR("%s: mprotect failed on %p and the launcher patch helper is unavailable", name, target);
         munmap(trampoline, trampolineSize);
         return false;
     }
 
-    std::vector<uint8_t> patchBytes(displaced);
-    // Fill the tail with the architecture's no-op-safe padding: anything past
-    // the jump is unreachable, but keeping it decodable helps disassembly.
-    memcpy(patchBytes.data(), code, displaced);
-    arch::writeJump(patchBytes.data(), replacement);
-    writeCode(code, patchBytes.data(), displaced);
+    if (!writeCode(code, patchBytes.data(), displaced)) {
+        JPR_ERROR("%s: the jump did not take at %p; the page is not writable by either route", name, target);
+        if (unprotected)
+            protectRange(code, displaced, PROT_READ | PROT_EXEC);
+        munmap(trampoline, trampolineSize);
+        return false;
+    }
 
-    protectRange(code, displaced, PROT_READ | PROT_EXEC);
+    if (unprotected)
+        protectRange(code, displaced, PROT_READ | PROT_EXEC);
     arch::flushInstructionCache(code, displaced);
 
     if (originalOut)
@@ -162,16 +183,21 @@ void removeAll() {
 
     for (auto& record : records) {
         size_t size = record.originalBytes.size();
-        if (protectRange(record.target, size, PROT_READ | PROT_WRITE | PROT_EXEC)) {
-            writeCode(record.target, record.originalBytes.data(), size);
+        bool unprotected = protectRange(record.target, size, PROT_READ | PROT_WRITE | PROT_EXEC);
+        bool restored = writeCode(record.target, record.originalBytes.data(), size);
+        if (unprotected)
             protectRange(record.target, size, PROT_READ | PROT_EXEC);
-            arch::flushInstructionCache(record.target, size);
-        } else {
-            JPR_ERROR("could not restore the original bytes at %p", (void*)record.target);
+
+        if (!restored) {
+            // Leaving the trampoline mapped is the lesser evil: the target
+            // still jumps into it, so unmapping would turn every later call
+            // into a crash.
+            JPR_ERROR("could not restore the original bytes at %p; leaving the trampoline mapped",
+                      (void*)record.target);
+            continue;
         }
-        // The trampoline is deliberately leaked when restoring fails, and
-        // freed only after the target is back to its original code, so an
-        // in-flight call can never land in an unmapped page.
+
+        arch::flushInstructionCache(record.target, size);
         munmap(record.trampoline, record.trampolineSize);
     }
 
