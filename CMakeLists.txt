@@ -14,6 +14,7 @@ set(JPR_CORE_SOURCES
     src/inline_hook.cpp
     src/inline_hook_aarch64.cpp
     src/inline_hook_x86_64.cpp
+    src/inline_hook_unsupported.cpp
     src/json.cpp
     src/keyboard.cpp
     src/keycodes.cpp
