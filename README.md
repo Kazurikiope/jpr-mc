@@ -1,0 +1,182 @@
+# jpr
+
+A module framework and mod for [mcpelauncher](https://minecraft-linux.github.io)
+(Minecraft Bedrock on Linux/macOS), loaded from the launcher's own mods
+directory. Ships with one module, **auto jump reset**.
+
+Target version: **1.26.45.1**.
+
+---
+
+## Install
+
+Drop the built library into the launcher's mods directory and put the config
+next to it:
+
+```
+~/.local/share/mcpelauncher/mods/
+├── libjpr.so
+└── jpr/
+    ├── jpr.json                      # your settings
+    ├── jpr.defaults.json             # generated, read-only reference
+    └── signatures/
+        └── 1.26.45.1-x86_64.json     # version specific addresses
+```
+
+On macOS the mods directory is
+`~/Library/Application Support/mcpelauncher/mods/`. The launcher also accepts
+extra directories with `--mods dir1,dir2`.
+
+The launcher loads every `.so` in that directory at startup and calls
+`mod_preinit` before `libminecraftpe.so` is mapped and `mod_init` after
+(`mcpelauncher-core/src/mod_loader.cpp`). There is no separate registration
+step — the file being there is the install.
+
+`jpr.json` is created with defaults on first run, and **every module is off by
+default**. Edit it and the mod reloads it within a second; no restart.
+
+## auto_jump_reset
+
+Holds the jump key for a short randomised window after the local player takes
+damage.
+
+| Setting | Type | Default | What it does |
+| --- | --- | --- | --- |
+| `enabled` | bool | `false` | Turn the module on. |
+| `chance` | 0.0–1.0 | `0.85` | Odds of reacting to a given hit. `"85%"` and a bare `85` also work. |
+| `delay_ms` | `[min, max]` | `[0, 30]` | Wait after the hit before the key goes down. |
+| `hold_ms` | `[min, max]` | `[90, 160]` | How long the key stays held. |
+| `release_ms` | `[min, max]` | `[40, 90]` | Gap between repeats. |
+| `repeats` | `[min, max]` | `[1, 1]` | Presses per activation. |
+| `cooldown_ms` | `[min, max]` | `[350, 450]` | Ignore further hits for this long after reacting. |
+| `distribution` | `normal` \| `uniform` | `normal` | How values are drawn from the ranges. |
+| `key` | key name or code | `"space"` | Key to hold. |
+| `cancel_on_new_hit` | bool | `false` | Restart the sequence on a fresh hit instead of ignoring it. |
+| `debug_trigger_key` | key name or code | `0` | Press to fire a fake damage event. `0` disables. |
+| `inject_mode` | enum | `events_and_states` | How the key reaches the game. |
+
+Every `[min, max]` pair accepts a bare number for a fixed value, and reversed
+bounds are swapped rather than rejected.
+
+Two details worth knowing:
+
+* **The cooldown applies to a failed chance roll too.** Without that, a burst of
+  hits would re-roll until one passed, and `0.85` would behave like `~1.0`.
+* **`normal` is the default distribution.** It clusters timings around the
+  middle of each range instead of spreading them flatly across it.
+
+## Adding a module
+
+One file, one macro. Settings bind declaratively, and the same declaration
+generates `jpr.defaults.json`, so there is no config plumbing to touch:
+
+```cpp
+class MyModule : public jpr::Module {
+    const char* id() const override { return "my_module"; }
+
+    void settings(jpr::SettingSet& s) override {
+        s.boolean("enabled", enabled_, false, "Turn the module on.");
+        s.range("hold_ms", hold_, 90, 160, "How long to hold.");
+        s.chance("chance", chance_, 0.5, "Odds of firing.");
+    }
+
+    void onLocalPlayerHurt(const jpr::HurtEvent& e) override { /* decide */ }
+    void onTick(const jpr::TickContext& t) override { /* act */ }
+
+    jpr::IntRange hold_;
+    double chance_ = 0.5;
+};
+
+JPR_REGISTER_MODULE(MyModule);
+```
+
+Add the file to `JPR_CORE_SOURCES` in `CMakeLists.txt`. Registration happens
+during static initialisation, so there is no central list to keep in sync.
+
+`SettingSet` also offers `integer`, `number`, `text`, `key`, `choice` and
+`distribution`. Unknown keys in a module's config section are reported by name,
+so a typo shows up in the log instead of silently doing nothing.
+
+## How it works
+
+### Pressing the key needs no signatures
+
+The launcher feeds keyboard input to the game by writing two objects that
+`libminecraftpe.so` exports by name (`mcpelauncher-client/src/symbols.cpp`):
+
+* `Keyboard::_states` — the held state per key
+* `Keyboard::_inputs` — the queue of press/release transitions
+
+Both resolve with `dlsym`, so the jump half of this mod works on any version
+without a single offset. That is also why `inject_mode` exists: it chooses
+whether to write the state array, the event queue, or both.
+
+### Detecting the hit does
+
+Damage handling is internal to `libminecraftpe.so`. Calls to it never cross a
+library boundary, so the launcher's own `mcpelauncher_hook` — which redirects
+PLT/GOT entries — cannot see them. That leaves inline hooking: overwrite the
+target's first instructions with a jump, and relocate what was displaced into a
+trampoline.
+
+`src/inline_hook.cpp` does that for x86-64 and aarch64. It is deliberately
+conservative: if a relative branch sits inside the bytes the jump needs, or an
+opcode the decoder does not account for, it refuses the hook and logs why
+rather than half-patching a function.
+
+The addresses it needs live in `signatures/<version>-<abi>.json`, never in the
+code — supporting a new Minecraft build is a data change. See the comments in
+that file for the shape. Nothing in it is mandatory:
+
+| Target | Effect when missing |
+| --- | --- |
+| `local_player_hurt` | No damage events. `debug_trigger_key` still works. |
+| `local_player_pointer` / `local_player_getter` | A `mob_hurt` kind hook is **refused** — without it, every mob's damage would look like yours. |
+| `damage_cause_offset` | `HurtEvent::cause` stays `-1`. |
+| `game_tick` | Falls back to the timer thread, below. |
+
+### The tick source, and why `game_tick` is worth having
+
+All timing runs off one heartbeat. Two things can drive it:
+
+* a **game thread hook** on `game_tick`, which is the right one: ticks land on
+  the same thread the game reads input on, so queued key events are handed over
+  safely, and the tick rate matches the frame rate the game actually samples
+  input at.
+* a **fallback timer thread** at 2ms, used when no `game_tick` signature is
+  configured. Timing stays accurate, but the key queue is handed to the game
+  from off-thread.
+
+The launcher pushes into `Keyboard::_inputs` from its own window thread, so the
+fallback is no worse than what the launcher already does — but if it ever looks
+unstable, `inject_mode: "states_only"` removes the cross-thread container write
+entirely.
+
+## Building
+
+Host tests (no NDK needed):
+
+```
+cmake -S . -B build -DJPR_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+These cover the config binding, the randomness helpers (including that `chance`
+statistically means what it says), the pattern scanner, the x86-64 instruction
+decoder, and the full auto jump reset state machine against a stepped clock.
+
+The mod itself needs the NDK — see [`cmake/README.md`](cmake/README.md). CI
+builds all four ABIs and uploads a ready-to-drop-in layout as an artifact.
+
+## Layout
+
+```
+include/jpr/     public headers
+src/             core: json, config, modules, hooks, input, signatures
+src/game/        signature driven hooks into libminecraftpe.so
+src/modules/     one file per module
+signatures/      version specific address files
+config/          the jpr.json written on first run
+tests/           host tests
+```

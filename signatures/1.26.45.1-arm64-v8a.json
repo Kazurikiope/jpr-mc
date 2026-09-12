@@ -1,0 +1,75 @@
+{
+  // Signature file for Minecraft Bedrock 1.26.45.1, arm64-v8a.
+  //
+  // Copy this to  <launcher data dir>/mods/jpr/signatures/  and fill in the
+  // patterns. The file name must be  <version>-<abi>.json  (or <version>.json)
+  // and is matched against the version the launcher reports for the APK.
+  //
+  // Each target takes:
+  //   "kind"        what the address means (see below)
+  //   "symbol"      mangled exported name, tried first when present
+  //   "pattern"     IDA style bytes, "48 8B ?? ??". Wildcards are ?? or ?.
+  //                 Must start with a concrete byte and have 4+ concrete bytes.
+  //   "occurrence"  which match to take when the pattern is not unique (0 based)
+  //   "offset"      added to the match; use it when the pattern starts partway
+  //                 into the function, or to name a struct field offset
+  //   "required"    log a missing target as an error rather than as info
+  //
+  // Nothing here is mandatory. With an empty file the mod still loads, key
+  // injection still works, and auto_jump_reset can be driven from its
+  // "debug_trigger_key" so the timing can be tuned before the damage hook
+  // exists.
+
+  "version": "1.26.45.1",
+  "abi": "arm64-v8a",
+
+  "targets": {
+
+    // The damage entry point. Two kinds are understood, both with the
+    // signature  bool f(void* self, ActorDamageSource* source, float damage,
+    //                   bool knockback, bool ignite)
+    //
+    //   "mob_hurt"          fires for every mob, so the mod compares `self`
+    //                       against the local player. Needs one of
+    //                       local_player_pointer / local_player_getter below,
+    //                       and is refused without one.
+    //   "local_player_hurt" already specific to the local player, no check.
+    //
+    // The hook runs the original first, then reports the hit, so a cancelled
+    // or fully absorbed hit still counts as damage taken. Say so if you want
+    // the opposite.
+    "local_player_hurt": {
+      "kind": "mob_hurt",
+      "symbol": "",
+      "pattern": "",
+      "offset": 0,
+      "required": false
+    },
+
+    // Whichever of these two you have. A pointer is a global holding
+    // LocalPlayer*; a getter is a function returning it with no arguments.
+    "local_player_pointer": {
+      "kind": "pointer",
+      "symbol": "",
+      "pattern": ""
+    },
+
+    // "local_player_getter": { "kind": "getter", "pattern": "..." },
+
+    // Optional. When present, the mod reads ActorDamageCause from the
+    // ActorDamageSource at this offset and puts it on the event, so a module
+    // can tell a mob hit from fall damage. "offset" is the field offset; no
+    // pattern is needed.
+    // "damage_cause_offset": { "kind": "offset", "offset": 8 },
+
+    // Optional but worth having. A per-frame function taking a single `this`
+    // pointer. Hooking it moves the mod's heartbeat onto the game thread,
+    // which is where handing key events to the game is actually safe. Without
+    // it the mod falls back to its own timer thread — see the README.
+    "game_tick": {
+      "kind": "tick",
+      "symbol": "",
+      "pattern": ""
+    }
+  }
+}

@@ -1,0 +1,67 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: cmake -S . -B build -DJPR_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+      - name: build
+        run: cmake --build build -j
+      - name: test
+        run: ctest --test-dir build --output-on-failure
+
+  mod:
+    name: libjpr.so (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64, armeabi-v7a, x86]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+          local-cache: true
+
+      - name: configure
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          cmake -S . -B build-${{ matrix.abi }} \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_PLATFORM=android-21 \
+            -DANDROID_STL=c++_shared \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: build
+        run: cmake --build build-${{ matrix.abi }} -j
+
+      - name: check the entry points are exported
+        run: |
+          NM="$(find "${{ steps.ndk.outputs.ndk-path }}" -name 'llvm-nm' | head -1)"
+          "$NM" --dynamic --defined-only build-${{ matrix.abi }}/libjpr.so | grep -E 'mod_init|mod_preinit'
+
+      - name: stage the release layout
+        run: |
+          mkdir -p out/jpr/signatures
+          cp build-${{ matrix.abi }}/libjpr.so out/
+          cp config/jpr.json out/jpr/
+          cp signatures/*.json out/jpr/signatures/ 2>/dev/null || true
+          cp README.md out/jpr/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jpr-${{ matrix.abi }}
+          path: out/

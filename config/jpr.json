@@ -1,0 +1,56 @@
+{
+  // jpr — configuration.
+  //
+  // Edited while the game is running? It reloads within a second, no restart.
+  // jpr.defaults.json next to this file is regenerated on every load and lists
+  // every setting this build reads, with its type, default and documentation.
+  //
+  // "log_level": trace | debug | info | warn | error
+  "log_level": "info",
+
+  "modules": {
+    "auto_jump_reset": {
+      "enabled": false,
+
+      // Odds of reacting at all to any given hit. 1.0 always, 0.0 never.
+      // "85%" and a bare 85 both work.
+      "chance": 0.85,
+
+      // Every timing below is [min, max] in milliseconds, drawn fresh each
+      // time. A bare number instead of a pair means a fixed value.
+
+      // Wait this long after the hit before the key goes down.
+      "delay_ms": [0, 30],
+      // How long the key stays held.
+      "hold_ms": [90, 160],
+      // Gap between repeats. Only used when repeats can exceed 1.
+      "release_ms": [40, 90],
+      // How many presses per activation.
+      "repeats": [1, 1],
+      // Ignore further hits for this long after reacting. Applies to a failed
+      // chance roll too, so "85%" stays 85% under a burst of hits.
+      "cooldown_ms": [350, 450],
+
+      // "normal" clusters values around the middle of each range the way a
+      // person's timings do; "uniform" spreads them evenly.
+      "distribution": "normal",
+
+      // Key to hold. A name ("space", "w", "f5") or a raw code.
+      "key": "space",
+
+      // Restart the sequence when a fresh hit lands mid-sequence instead of
+      // ignoring it. Only reachable when cooldown_ms is short.
+      "cancel_on_new_hit": false,
+
+      // Press this key to fire a fake damage event, so the press/hold/release
+      // timing can be tuned before a damage signature exists. 0 disables it.
+      "debug_trigger_key": 0,
+
+      // How the key reaches the game.
+      //   events_and_states  what the launcher does for a real key press
+      //   states_only        only write Keyboard::_states
+      //   events_only        only queue transition events
+      "inject_mode": "events_and_states"
+    }
+  }
+}
