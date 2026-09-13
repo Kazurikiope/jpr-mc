@@ -56,8 +56,16 @@ public:
 
         set.key("debug_trigger_key", debugKey_, 0,
                 "Pressing this key fires a fake damage event, so the timing can be tested without a "
-                "working damage hook. 0 disables it. Note that this is a key the mod watches, not one it "
-                "injects.");
+                "working damage hook. 0 disables it. This reads the game's key state, so it needs the "
+                "same Keyboard symbols injection does — if those are missing, use debug_auto_fire_ms "
+                "instead.");
+
+        set.integer("debug_auto_fire_ms", debugAutoFireMs_, 0,
+                    "Fire a fake damage event every this many milliseconds. 0 disables it. Unlike "
+                    "debug_trigger_key this reads nothing from the game, so it still runs when key "
+                    "symbols are missing — which makes it the way to tell 'the mod is not firing' apart "
+                    "from 'the mod is firing but the key is not arriving'.",
+                    0, 600000);
 
         std::string injectMode;
         set.choice("inject_mode", injectMode, "events_and_states", {"events_and_states", "states_only", "events_only"},
@@ -77,8 +85,18 @@ public:
     }
 
     void onLocalPlayerHurt(const HurtEvent& event) override {
-        if (!enabled_ || !keyboard::ready())
+        if (!enabled_)
             return;
+
+        // Deliberately not gated on keyboard::ready(). When injection is
+        // unavailable the module still runs its whole decision path and says
+        // so once, because "nothing happened" is indistinguishable from a
+        // failed chance roll otherwise.
+        if (!keyboard::ready() && !warnedNoKeyboard_) {
+            warnedNoKeyboard_ = true;
+            JPR_ERROR("reacting to hits, but key injection is unavailable — see the startup log. "
+                      "Presses are being scheduled and dropped.");
+        }
 
         if (event.now < cooldownUntil_) {
             JPR_DEBUG("hit ignored, %lldms of cooldown left", (long long)(cooldownUntil_ - event.now));
@@ -127,6 +145,7 @@ public:
 
         if (!holding_) {
             keyboard::press(heldKey_);
+            JPR_DEBUG("press %s", keyName(heldKey_));
             holding_ = true;
             nextActionAt_ = tick.now + random.pick(hold_, distribution_);
             return;
@@ -151,7 +170,16 @@ private:
     // exercised without a damage hook. Edge triggered, so holding the key down
     // fires once.
     void pollDebugKey(const TickContext& tick) {
-        if (!enabled_ || debugKey_ <= 0)
+        if (!enabled_)
+            return;
+
+        if (debugAutoFireMs_ > 0 && tick.now - lastAutoFire_ >= debugAutoFireMs_) {
+            lastAutoFire_ = tick.now;
+            JPR_INFO("debug_auto_fire_ms elapsed, firing a synthetic hit");
+            game::emitSyntheticHurt();
+        }
+
+        if (debugKey_ <= 0)
             return;
         bool down = keyboard::gameKeyDown(debugKey_);
         if (down && !debugKeyWasDown_) {
@@ -159,7 +187,6 @@ private:
             game::emitSyntheticHurt();
         }
         debugKeyWasDown_ = down;
-        (void)tick;
     }
 
     void abortSequence(const char* why) {
@@ -184,6 +211,7 @@ private:
     int key_ = keycode::Space;
     bool cancelOnNewHit_ = false;
     int debugKey_ = 0;
+    int debugAutoFireMs_ = 0;
     keyboard::InjectMode injectMode_ = keyboard::InjectMode::EventsAndStates;
 
     // Sequence state.
@@ -194,6 +222,8 @@ private:
     int64_t nextActionAt_ = 0;
     int64_t cooldownUntil_ = 0;
     bool debugKeyWasDown_ = false;
+    bool warnedNoKeyboard_ = false;
+    int64_t lastAutoFire_ = 0;
 };
 
 JPR_REGISTER_MODULE(AutoJumpReset);

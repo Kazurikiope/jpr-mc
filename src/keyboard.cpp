@@ -116,13 +116,27 @@ bool init() {
     else
         gInputs = (std::vector<InputEvent>*)inputs;
 
-    if (!gStates || !inputs) {
-        JPR_ERROR("keyboard symbols missing (_states=%p _inputs=%p) — key injection unavailable", (void*)gStates,
-                  inputs);
+    // Report each symbol separately. Which one is missing decides whether
+    // there is anything to do about it, so a combined message is no use.
+    JPR_INFO("Keyboard::_states          %s", gStates ? "found" : "MISSING");
+    JPR_INFO("Keyboard::_inputs          %s", inputs ? "found" : "MISSING");
+    JPR_INFO("Keyboard::_gameControllerId %s", gControllerId ? "found" : "MISSING");
+
+    // This is exactly the condition the launcher uses to decide whether to
+    // feed the game through these objects at all
+    // (WindowCallbacks::WindowCallbacks, mcpelauncher-client). If it is false,
+    // the launcher routes real key presses through GameActivity instead and
+    // writing these objects reaches nothing — so injection cannot work either,
+    // and saying so plainly beats appearing to run and doing nothing.
+    bool launcherUsesDirectInput = gStates && inputs && gControllerId;
+    if (!launcherUsesDirectInput) {
+        JPR_ERROR("KEY INJECTION UNAVAILABLE on this game version.");
+        JPR_ERROR("The launcher needs all three symbols above to feed keyboard input through them;");
+        JPR_ERROR("with one missing it uses the GameActivity path instead, which this mod cannot reach");
+        JPR_ERROR("without a signature for the game's own input handler. auto_jump_reset will roll its");
+        JPR_ERROR("dice and schedule presses, but nothing will arrive in game.");
         return false;
     }
-    if (!gControllerId)
-        JPR_WARN("Keyboard::_gameControllerId missing; injecting with controller id 0");
 
     gReady = true;
     JPR_INFO("keyboard injection ready (%s layout)", gLegacy ? "legacy" : "modern");

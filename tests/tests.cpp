@@ -451,6 +451,58 @@ void testChanceRate() {
     jpr::setClockForTesting(nullptr);
 }
 
+// debug_auto_fire_ms must drive the whole sequence without reading anything
+// from the game, so it still works when the Keyboard symbols are missing.
+void testAutoFire() {
+    jpr::setClockForTesting(testClock);
+    jpr::keyboard::enableTestCapture(capture);
+
+    auto& config = jpr::Config::instance();
+    config.setPathForTesting(writeConfig(R"({
+        "log_level": "error",
+        "modules": { "auto_jump_reset": {
+            "enabled": true, "chance": 1.0, "delay_ms": 0, "hold_ms": 10,
+            "release_ms": 0, "repeats": 1, "cooldown_ms": 0,
+            "distribution": "uniform", "debug_auto_fire_ms": 100
+        }}
+    })"));
+    config.load();
+    auto& modules = jpr::ModuleManager::instance();
+    modules.applyConfig();
+
+    gCaptured.clear();
+    advance(1000);
+
+    int presses = 0;
+    for (auto const& item : gCaptured) {
+        if (item.second)
+            presses++;
+    }
+    // One every 100ms over a second, give or take the boundary.
+    CHECK(presses >= 9 && presses <= 11);
+    if (presses < 9 || presses > 11)
+        fprintf(stderr, "  auto fire produced %d presses over 1000ms\n", presses);
+
+    // Zero must switch it off.
+    config.setPathForTesting(writeConfig(R"({
+        "log_level": "error",
+        "modules": { "auto_jump_reset": {
+            "enabled": true, "chance": 1.0, "hold_ms": 10, "cooldown_ms": 0,
+            "debug_auto_fire_ms": 0
+        }}
+    })"));
+    config.load();
+    modules.applyConfig();
+
+    advance(50);
+    gCaptured.clear();
+    advance(1000);
+    CHECK(gCaptured.empty());
+
+    jpr::keyboard::enableTestCapture(nullptr);
+    jpr::setClockForTesting(nullptr);
+}
+
 }  // namespace
 
 int main() {
@@ -464,6 +516,7 @@ int main() {
     testDecoder();
     testAutoJumpReset();
     testChanceRate();
+    testAutoFire();
 
     printf("%d checks, %d failure(s)\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

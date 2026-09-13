@@ -44,7 +44,14 @@
 
       // Press this key to fire a fake damage event, so the press/hold/release
       // timing can be tuned before a damage signature exists. 0 disables it.
+      // Reads the game's key state, so it needs the same Keyboard symbols
+      // injection does.
       "debug_trigger_key": 0,
+
+      // Fire a fake damage event every this many ms. 0 disables it. Reads
+      // nothing from the game, so it still runs when the Keyboard symbols are
+      // missing — use it to tell "not firing" from "firing but not arriving".
+      "debug_auto_fire_ms": 0,
 
       // How the key reaches the game.
       //   events_and_states  what the launcher does for a real key press

@@ -208,6 +208,36 @@ thing that changes is *what* triggers the sequence.
 
 ## Troubleshooting
 
+**`KEY INJECTION UNAVAILABLE on this game version.`** The mod could not find
+`Keyboard::_states`, `Keyboard::_inputs` or `Keyboard::_gameControllerId` in
+`libminecraftpe.so`. The three lines just above it in the log say which one is
+missing.
+
+This is not a config problem and nothing in `jpr.json` will fix it. The
+launcher itself only feeds keyboard input through those objects when all three
+resolve (`WindowCallbacks::WindowCallbacks`); with one missing it routes real
+key presses through GameActivity instead, which the mod cannot reach without a
+signature for the game's own input handler. The module will still roll its dice
+and schedule presses — they just will not arrive.
+
+**Jumps never come through, but the log looks fine.** Separate "the mod is not
+firing" from "the mod is firing but the key is not arriving":
+
+```jsonc
+"log_level": "debug",
+"debug_auto_fire_ms": 1500
+```
+
+That fires a synthetic hit every 1.5s while reading nothing from the game, so
+it works even when the Keyboard symbols are missing. You should see a
+`press space` line every time. If those appear and the character does not jump,
+injection is reaching a dead end; if they do not appear, the module is not
+firing at all and the log above it says why.
+
+(`debug_trigger_key` reads the game's key state, so it needs the same symbols
+injection does — if those are missing it will never fire either. Use
+`debug_auto_fire_ms` in that case.)
+
 **No `[INFO/jpr]` lines at all.** The `.so` is not being loaded. Check it is
 directly in `mods/` (not in a subfolder), that it is the `arm64-v8a` build, and
 that quarantine is cleared.
