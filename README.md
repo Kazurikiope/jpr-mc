@@ -168,6 +168,16 @@ fallback is no worse than what the launcher already does — but if it ever look
 unstable, `inject_mode: "states_only"` removes the cross-thread container write
 entirely.
 
+## Diagnosing it
+
+`status.txt` is written next to `jpr.json` and refreshed every couple of
+seconds. It reports the loaded entry point, each Keyboard symbol, each
+signature target, the tick source, live counters for damage events and key
+writes, and a `WHAT TO CHECK` line that names the next thing to look at.
+
+Its absence is the most informative case: no file means the mod never ran, so
+the fault is on the launcher side rather than in any setting.
+
 ## Building
 
 Host tests (no NDK needed):

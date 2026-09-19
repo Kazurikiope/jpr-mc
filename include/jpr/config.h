@@ -22,6 +22,10 @@
 
 namespace jpr {
 
+// Creates every parent directory of `path` (a file path). Existing ones are
+// left alone.
+void ensureDirectoryFor(const std::string& path);
+
 // One described setting, kept for the generated reference file.
 struct SettingInfo {
     std::string key;

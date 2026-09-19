@@ -5,6 +5,7 @@
 #include <chrono>
 
 #include "jpr/log.h"
+#include "jpr/status.h"
 
 namespace jpr {
 
@@ -90,6 +91,7 @@ void ModuleManager::dispatchTick(const TickContext& tick) {
 }
 
 void ModuleManager::dispatchLocalPlayerHurt(const HurtEvent& event) {
+    status::countHurtEvent();
     for (auto& module : modules_) {
         if (module->enabled())
             module->onLocalPlayerHurt(event);

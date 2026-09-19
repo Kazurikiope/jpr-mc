@@ -53,6 +53,17 @@ bool gameKeyDown(int keyCode);
 // inject mode queues events.
 void flush();
 
+// What init() found. Reported in status.txt, where it is the datum that
+// decides whether anything can work at all.
+struct SymbolReport {
+    bool resolved = false;   // init() has run
+    bool states = false;
+    bool inputs = false;
+    bool controllerId = false;
+    bool legacyLayout = false;
+};
+SymbolReport symbols();
+
 // Test support: makes ready() true and records transitions into a log rather
 // than touching the game. `capture` receives (keyCode, down) on every flush.
 void enableTestCapture(void (*capture)(int keyCode, bool down));

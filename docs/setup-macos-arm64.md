@@ -208,7 +208,26 @@ thing that changes is *what* triggers the sequence.
 
 ## Troubleshooting
 
-### First: is the launcher loading mods at all?
+### Start here: open `status.txt`
+
+The mod writes `status.txt` next to `jpr.json`, rewrites it every couple of
+seconds while the game runs, and puts everything worth knowing in it — which
+Keyboard symbols resolved, which signatures resolved, how many damage events
+arrived, how many presses were queued and actually written, and a plain
+`WHAT TO CHECK` line at the bottom. No log reading required.
+
+```sh
+open "$HOME/Library/Application Support/mcpelauncher/mods/jpr/"
+```
+
+**If `status.txt` does not exist, the mod never ran.** That is the single most
+useful thing it can tell you, and it means the problem is on the launcher side
+— nothing in `jpr.json` is involved. Go to the next section.
+
+If it exists but the timestamp on its first line is old, the mod loaded at some
+point but is not running now.
+
+### Is the launcher loading mods at all?
 
 Open the launcher's **Game Log** tab and search it for:
 

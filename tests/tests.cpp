@@ -21,6 +21,7 @@
 #include "jpr/module.h"
 #include "jpr/random.h"
 #include "jpr/sigscan.h"
+#include "jpr/status.h"
 #include "jpr/tick.h"
 #include "inline_hook_arch.h"
 
@@ -503,6 +504,55 @@ void testAutoFire() {
     jpr::setClockForTesting(nullptr);
 }
 
+// The status file is the mod's only self-report when nobody reads the game
+// log, so it has to appear and to name the thing that is wrong.
+void testStatusFile() {
+    jpr::keyboard::enableTestCapture(nullptr);  // injection unavailable
+
+    auto& config = jpr::Config::instance();
+    std::string dir = "/tmp/jpr-status-test/nested/";
+    (void)!system("rm -rf /tmp/jpr-status-test");
+    config.setPathForTesting(dir + "jpr.json");
+    config.load();
+    jpr::ModuleManager::instance().applyConfig();
+
+    jpr::status::markLoaded("mod_init");
+
+    std::string body;
+    FILE* file = fopen((dir + "status.txt").c_str(), "rb");
+    CHECK(file != nullptr);  // written even though the directory did not exist
+    if (!file)
+        return;
+    char buffer[4096];
+    size_t read;
+    while ((read = fread(buffer, 1, sizeof(buffer), file)) > 0)
+        body.append(buffer, read);
+    fclose(file);
+
+    CHECK(body.find("jpr status") != std::string::npos);
+    CHECK(body.find("mod_init") != std::string::npos);
+    CHECK(body.find("KEY INJECTION") != std::string::npos);
+    CHECK(body.find("UNAVAILABLE") != std::string::npos);
+    CHECK(body.find("auto_jump_reset") != std::string::npos);
+    CHECK(body.find("MODULES") != std::string::npos);
+
+    // With injection working the verdict has to flip.
+    jpr::keyboard::enableTestCapture(capture);
+    jpr::status::write();
+    body.clear();
+    file = fopen((dir + "status.txt").c_str(), "rb");
+    CHECK(file != nullptr);
+    if (file) {
+        while ((read = fread(buffer, 1, sizeof(buffer), file)) > 0)
+            body.append(buffer, read);
+        fclose(file);
+    }
+    CHECK(body.find("status             READY") != std::string::npos);
+
+    jpr::keyboard::enableTestCapture(nullptr);
+    (void)!system("rm -rf /tmp/jpr-status-test");
+}
+
 }  // namespace
 
 int main() {
@@ -517,6 +567,7 @@ int main() {
     testAutoJumpReset();
     testChanceRate();
     testAutoFire();
+    testStatusFile();
 
     printf("%d checks, %d failure(s)\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

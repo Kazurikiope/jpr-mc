@@ -13,6 +13,7 @@
 #include "jpr/log.h"
 #include "jpr/module.h"
 #include "jpr/signatures.h"
+#include "jpr/status.h"
 #include "jpr/tick.h"
 
 namespace {
@@ -34,11 +35,15 @@ void shutdown() {
 
 extern "C" JPR_EXPORT void mod_preinit() {
     jpr::api::init();
+    // Written before anything else can fail, so the file exists even if the
+    // rest of startup does not survive.
+    jpr::status::markLoaded("mod_preinit");
     JPR_INFO("jpr preinit (build %s, abi %s)", __DATE__, jpr::Signatures::abi());
 }
 
 extern "C" JPR_EXPORT void mod_init() {
     jpr::api::init();
+    jpr::status::markLoaded("mod_init");
 
     jpr::Config::instance().load();
     jpr::ModuleManager::instance().applyConfig();
@@ -52,6 +57,7 @@ extern "C" JPR_EXPORT void mod_init() {
     jpr::tick::start();
     gStarted = true;
 
+    jpr::status::write();
     JPR_INFO("jpr ready: %zu module(s), %d hook(s), config at %s",
              jpr::ModuleManager::instance().modules().size(), hooks, jpr::Config::instance().path().c_str());
 

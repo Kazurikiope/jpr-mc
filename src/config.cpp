@@ -289,7 +289,9 @@ long modifiedTime(const std::string& path) {
     return (long)info.st_mtime;
 }
 
-void ensureDirectory(const std::string& path) {
+}  // namespace
+
+void ensureDirectoryFor(const std::string& path) {
     // Creates each component in turn; existing components are fine.
     for (size_t i = 1; i < path.size(); i++) {
         if (path[i] != '/')
@@ -299,6 +301,8 @@ void ensureDirectory(const std::string& path) {
             JPR_WARN("could not create %s: %s", prefix.c_str(), strerror(errno));
     }
 }
+
+namespace {
 
 const char* kTemplate = R"JSON({
   // jpr — configuration.
@@ -349,7 +353,7 @@ void Config::load() {
     if (path_.empty())
         path_ = std::string(api::dataDirectory()) + "jpr.json";
 
-    ensureDirectory(path_);
+    ensureDirectoryFor(path_);
 
     std::string text;
     if (!readFile(path_, text)) {

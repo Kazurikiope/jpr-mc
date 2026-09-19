@@ -13,6 +13,7 @@
 #include "jpr/keyboard.h"
 #include "jpr/log.h"
 #include "jpr/module.h"
+#include "jpr/status.h"
 
 namespace jpr {
 namespace tick {
@@ -95,12 +96,15 @@ void pump(bool gameThread) {
     // the same frame.
     keyboard::flush();
 
+    status::countTick();
     ModuleManager::instance().dispatchTick(context);
 
     // Modules that pressed or released during this tick get their input out
     // immediately when we are on the game thread, where doing so is safe.
     if (gameThread)
         keyboard::flush();
+
+    status::writeThrottled(context.now);
 }
 
 }  // namespace tick

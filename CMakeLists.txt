@@ -22,6 +22,7 @@ set(JPR_CORE_SOURCES
     src/module.cpp
     src/random.cpp
     src/signatures.cpp
+    src/status.cpp
     src/sigscan.cpp
     src/tick.cpp
     src/game/game_hooks.cpp

@@ -9,6 +9,7 @@
 #include "jpr/api.h"
 #include "jpr/keycodes.h"
 #include "jpr/log.h"
+#include "jpr/status.h"
 
 namespace jpr {
 namespace keyboard {
@@ -61,6 +62,8 @@ void queue(int keyCode, bool down) {
         return;  // already in that state; nothing to send
     gHeld[keyCode] = down;
     gPending.push_back(Pending{keyCode, down});
+    if (down)
+        status::countPressQueued();
 }
 
 }  // namespace
@@ -145,6 +148,16 @@ bool init() {
 
 bool ready() { return gReady; }
 
+SymbolReport symbols() {
+    SymbolReport report;
+    report.resolved = gInitialised;
+    report.states = gStates != nullptr;
+    report.inputs = gInputs != nullptr || gLegacyInputs != nullptr;
+    report.controllerId = gControllerId != nullptr;
+    report.legacyLayout = gLegacy;
+    return report;
+}
+
 void press(int keyCode) { queue(keyCode, true); }
 
 void release(int keyCode) { queue(keyCode, false); }
@@ -189,14 +202,18 @@ void flush() {
     }
 
     int controllerId = gControllerId ? *gControllerId : 0;
+    int statesWritten = 0, eventsWritten = 0;
     for (auto const& item : batch) {
         int state = item.down ? 1 : 0;
 
-        if (gMode != InjectMode::EventsOnly)
+        if (gMode != InjectMode::EventsOnly) {
             gStates[item.key & 0xff] = state;
+            statesWritten++;
+        }
 
         if (gMode == InjectMode::StatesOnly)
             continue;
+        eventsWritten++;
 
         if (gLegacy) {
             LegacyInputEvent event{};
@@ -215,6 +232,8 @@ void flush() {
             gInputs->push_back(event);
         }
     }
+
+    status::countPressDelivered(eventsWritten, statesWritten);
 
     if (logLevel() <= LogLevel::Trace) {
         for (auto const& item : batch)
