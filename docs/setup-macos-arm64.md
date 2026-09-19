@@ -208,6 +208,51 @@ thing that changes is *what* triggers the sequence.
 
 ## Troubleshooting
 
+### First: is the launcher loading mods at all?
+
+Open the launcher's **Game Log** tab and search it for:
+
+```
+[INFO] [ModLoader] Loading mods from /Users/.../mcpelauncher/mods/
+```
+
+**If that line is absent, no mod on your system is running** and nothing in
+`jpr.json` matters yet. Two causes, in order of likelihood:
+
+**1. The launcher started the game in free/trial mode.** The launcher passes
+`--free-only` whenever it does not have a verified Google Play licence
+(`GameLauncher::start`), and the client skips mod loading entirely in that mode
+— every `loadModsFromDirectory` call is behind `if (!freeOnly.get())`. Sign in
+with the Google account that owns Minecraft and let the licence check pass.
+There is no launcher setting or config file that overrides this.
+
+**2. The `mods` folder is in the wrong place.** It does not exist by default.
+Find your data root under **Settings → Storage** in the launcher and create
+`mods/` inside *that* directory — do not assume the path. The `.so` files go
+directly in `mods/`, never in a subfolder.
+
+### "Installed mods" being greyed out is normal
+
+It is not a sign that anything is broken, and it will not change once jpr is
+installed correctly. The launcher's Mods screen says so itself: *"Managing mods
+is not yet supported."* That screen is a browser for the online mod database,
+not a list of what you have installed — the launcher has no installed-mod
+management UI at all. Entries there grey out when the listed mod has no asset
+for your architecture, which is about those mods, not yours.
+
+The only evidence that jpr loaded is the `[jpr]` lines in the Game Log.
+
+### The signature file is not the problem (yet)
+
+Swapping, deleting or renaming files under `signatures/` changes nothing right
+now: they are all empty templates with no patterns in them. The mod picks the
+one matching your version and ABI automatically and ignores the rest, so having
+`1.26.45.1-x86_64.json` sitting there alongside the arm64 one is harmless.
+
+What does have to match your architecture is **`libjpr.so` itself** — use the
+`jpr-arm64-v8a` build on Apple Silicon.
+
+
 **`KEY INJECTION UNAVAILABLE on this game version.`** The mod could not find
 `Keyboard::_states`, `Keyboard::_inputs` or `Keyboard::_gameControllerId` in
 `libminecraftpe.so`. The three lines just above it in the log say which one is
