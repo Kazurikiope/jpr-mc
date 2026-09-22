@@ -36,8 +36,21 @@ constexpr int64_t kConfigCheckIntervalMs = 500;
 
 void timerLoop() {
     JPR_INFO("fallback timer tick source running at %dms", gIntervalMs.load());
+    bool handedOver = false;
     while (gRunning.load()) {
-        pump(false);
+        // The game thread source can appear at any point after startup: the
+        // per-frame callback only begins firing once the game renders. Once it
+        // does, stop pumping here rather than dispatching from both, which
+        // would race the game thread over the key queue.
+        if (gGameThreadSource.load()) {
+            if (!handedOver) {
+                handedOver = true;
+                JPR_INFO("game thread source took over; timer no longer ticking");
+            }
+        } else {
+            handedOver = false;
+            pump(false);
+        }
         std::unique_lock<std::mutex> lock(gWakeMutex);
         gWake.wait_for(lock, std::chrono::milliseconds(gIntervalMs.load()),
                        [] { return !gRunning.load(); });
@@ -62,10 +75,9 @@ bool hasGameThreadSource() { return gGameThreadSource.load(); }
 void start() {
     if (gRunning.exchange(true))
         return;
-    if (gGameThreadSource.load()) {
-        JPR_INFO("ticking from the game thread hook");
-        return;
-    }
+    // The timer thread starts regardless and stands down if and when a game
+    // thread source appears, because whether one will is not known yet: the
+    // per-frame callback does not fire until the game starts rendering.
     gThread = std::thread(timerLoop);
 }
 

@@ -19,6 +19,7 @@ set(JPR_CORE_SOURCES
     src/keyboard.cpp
     src/keyboard_gameactivity.cpp
     src/game_activity_abi_check.cpp
+    src/game_window_api.cpp
     src/keycodes.cpp
     src/log.cpp
     src/module.cpp

@@ -163,22 +163,24 @@ that file for the shape. Nothing in it is mandatory:
 | `damage_cause_offset` | `HurtEvent::cause` stays `-1`. |
 | `game_tick` | Falls back to the timer thread, below. |
 
-### The tick source, and why `game_tick` is worth having
+### The tick source
 
-All timing runs off one heartbeat. Two things can drive it:
+All timing runs off one heartbeat. Three things can drive it, in order of
+preference:
 
-* a **game thread hook** on `game_tick`, which is the right one: ticks land on
-  the same thread the game reads input on, so queued key events are handed over
-  safely, and the tick rate matches the frame rate the game actually samples
-  input at.
-* a **fallback timer thread** at 2ms, used when no `game_tick` signature is
-  configured. Timing stays accurate, but the key queue is handed to the game
-  from off-thread.
+* the launcher's **per-frame callback**
+  (`game_window_add_swap_buffers_callback`), which needs no signature and is
+  the right answer: ticks land on the game thread, the same one the launcher
+  delivers input on, at the rate the game samples input. This matters most on
+  the GameActivity path, where delivering a press means calling into the
+  game's input system — doing that off-thread races whatever the game thread
+  is doing.
+* a **game thread hook** on a `game_tick` signature, if one is configured.
+* a **fallback timer thread** at 2ms. It starts unconditionally and stands
+  down once a game thread source appears, since whether one will is not known
+  at startup — the per-frame callback does not fire until the game renders.
 
-The launcher pushes into `Keyboard::_inputs` from its own window thread, so the
-fallback is no worse than what the launcher already does — but if it ever looks
-unstable, `inject_mode: "states_only"` removes the cross-thread container write
-entirely.
+`status.txt` reports which is driving.
 
 ## Diagnosing it
 

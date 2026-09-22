@@ -11,6 +11,7 @@
 #include "jpr/log.h"
 #include "jpr/status.h"
 #include "keyboard_gameactivity.h"
+#include "game_window_api.h"
 
 namespace jpr {
 namespace keyboard {
@@ -199,11 +200,13 @@ bool gameKeyDown(int keyCode) {
         return false;
     if (gCapture)
         return gHeld[keyCode & 0xff];
-    // Only the direct path can answer this; GameActivity gives no way to read
-    // back key state, so debug_trigger_key does not work there.
-    if (gBackend != Backend::DirectSymbols || !gStates)
-        return false;
-    return gStates[keyCode & 0xff] != 0;
+    if (gBackend == Backend::DirectSymbols && gStates)
+        return gStates[keyCode & 0xff] != 0;
+    // GameActivity offers no way to read key state back, but the launcher's
+    // game_window API reports real presses to mods, so use that instead.
+    if (gamewindow::keyStateAvailable())
+        return gamewindow::keyDown(keyCode);
+    return false;
 }
 
 void enableTestCapture(void (*capture)(int, bool)) {

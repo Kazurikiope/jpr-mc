@@ -268,9 +268,10 @@ Two consequences worth knowing:
 * **`status.txt` reads `not yet - starts when the game does` until you load a
   world.** The GameActivity does not exist until the game starts, so injection
   becomes `READY` at that point, not at startup.
-* **`debug_trigger_key` cannot work on this path.** GameActivity gives no way
-  to read key state back, so the mod cannot see you press F7. Use
-  `debug_auto_fire_ms` instead.
+* **`debug_trigger_key` works again.** The launcher publishes a keyboard
+  callback to mods (`game_window_add_keyboard_callback`), so the mod can see
+  real presses even without `Keyboard::_states`. `debug_auto_fire_ms` remains
+  the more reliable of the two, since it depends on nothing.
 
 ### "Installed mods" being greyed out is normal
 

@@ -18,6 +18,8 @@
 #include "jpr/signatures.h"
 #include "jpr/tick.h"
 
+#include "game_window_api.h"
+
 namespace jpr {
 namespace status {
 
@@ -166,7 +168,12 @@ void write() {
 
     fprintf(file, "\nACTIVITY\n");
     fprintf(file, "  tick source        %s\n",
-            tick::hasGameThreadSource() ? "game thread hook" : "fallback timer thread");
+            tick::hasGameThreadSource() ? "game thread (per-frame callback)" : "fallback timer thread");
+    fprintf(file, "  game_window API    %s\n", gamewindow::available() ? "bound" : "unavailable");
+    fprintf(file, "  per-frame callback %s\n",
+            gamewindow::frameCallbackLive() ? "firing" : "not firing yet");
+    fprintf(file, "  real key state     %s\n",
+            gamewindow::keyStateAvailable() ? "available" : "unavailable");
     fprintf(file, "  ticks              %llu\n", (unsigned long long)gTicks.load());
     fprintf(file, "  damage events seen %llu\n", (unsigned long long)gHurtEvents.load());
 

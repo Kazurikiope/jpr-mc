@@ -16,6 +16,8 @@
 #include "jpr/status.h"
 #include "jpr/tick.h"
 
+#include "game_window_api.h"
+
 namespace {
 
 bool gStarted = false;
@@ -50,6 +52,11 @@ extern "C" JPR_EXPORT void mod_init() {
 
     if (!jpr::keyboard::init())
         JPR_ERROR("key injection is unavailable; the mod cannot do anything useful in this state");
+
+    // Registers the per-frame callback and the keyboard callback the launcher
+    // publishes for mods. The per-frame one is what moves ticking onto the
+    // game thread, which is where delivering input is actually safe.
+    jpr::gamewindow::init();
 
     jpr::Signatures::instance().load();
     int hooks = jpr::game::installHooks();
