@@ -22,6 +22,7 @@
 #include "jpr/random.h"
 #include "jpr/sigscan.h"
 #include "jpr/status.h"
+#include "jpr/game_activity_abi.h"
 #include "jpr/tick.h"
 #include "inline_hook_arch.h"
 
@@ -553,6 +554,45 @@ void testStatusFile() {
     (void)!system("rm -rf /tmp/jpr-status-test");
 }
 
+// The Android key mapping. The Android build additionally static_asserts these
+// against the real AKEYCODE_* macros (src/game_activity_abi_check.cpp); this
+// covers the shape of the mapping on the host, where those macros are absent.
+void testAndroidKeyCodes() {
+    using jpr::ga::androidKeyCode;
+
+    CHECK(androidKeyCode(jpr::keycode::Space) == 62);  // AKEYCODE_SPACE
+    CHECK(androidKeyCode('A') == 29);                  // AKEYCODE_A
+    CHECK(androidKeyCode('Z') == 29 + 25);
+    CHECK(androidKeyCode('W') == 29 + 22);
+    CHECK(androidKeyCode(48) == 7);                    // '0' -> AKEYCODE_0
+    CHECK(androidKeyCode(57) == 7 + 9);
+    CHECK(androidKeyCode(112) == 131);                 // F1
+    CHECK(androidKeyCode(123) == 131 + 11);            // F12
+    CHECK(androidKeyCode(0x60) == 144);                // NUMPAD_0
+    CHECK(androidKeyCode(16) == 59);                   // SHIFT_LEFT
+    CHECK(androidKeyCode(27) == 111);                  // ESCAPE
+
+    // Unmapped keys must come back UNKNOWN rather than as some other key,
+    // since sending the wrong key is worse than sending none.
+    CHECK(androidKeyCode(9999) == jpr::ga::kKeyCodeUnknown);
+    CHECK(androidKeyCode(0) == jpr::ga::kKeyCodeUnknown);
+    CHECK(androidKeyCode(-1) == jpr::ga::kKeyCodeUnknown);
+
+    // Every key name the config accepts must map to something real, or a
+    // perfectly valid config line would silently do nothing.
+    const char* names[] = {"space", "w", "a", "s", "d", "shift", "ctrl", "escape",
+                           "f1", "f5", "f12", "up", "down", "left", "right", "enter", "tab"};
+    for (const char* name : names) {
+        int key = jpr::parseKeyName(name, -1);
+        CHECK(key > 0);
+        if (androidKeyCode(key) == jpr::ga::kKeyCodeUnknown)
+            fprintf(stderr, "FAIL '%s' (mc %d) has no Android key code\n", name, key);
+        gChecks++;
+        if (androidKeyCode(key) == jpr::ga::kKeyCodeUnknown)
+            gFailures++;
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -568,6 +608,7 @@ int main() {
     testChanceRate();
     testAutoFire();
     testStatusFile();
+    testAndroidKeyCodes();
 
     printf("%d checks, %d failure(s)\n", gChecks, gFailures);
     return gFailures ? 1 : 0;

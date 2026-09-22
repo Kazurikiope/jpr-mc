@@ -10,6 +10,7 @@
 #include "jpr/keycodes.h"
 #include "jpr/log.h"
 #include "jpr/status.h"
+#include "keyboard_gameactivity.h"
 
 namespace jpr {
 namespace keyboard {
@@ -41,8 +42,8 @@ std::vector<Pending> gPending;
 bool gHeld[256] = {};
 
 bool gInitialised = false;
-bool gReady = false;
 bool gLegacy = false;
+Backend gBackend = Backend::None;
 InjectMode gMode = InjectMode::EventsAndStates;
 
 int* gStates = nullptr;
@@ -98,7 +99,7 @@ void setInjectMode(InjectMode mode) {
 
 bool init() {
     if (gInitialised)
-        return gReady;
+        return ready();
     gInitialised = true;
 
     if (!api::minecraftHandle()) {
@@ -119,34 +120,55 @@ bool init() {
     else
         gInputs = (std::vector<InputEvent>*)inputs;
 
-    // Report each symbol separately. Which one is missing decides whether
-    // there is anything to do about it, so a combined message is no use.
-    JPR_INFO("Keyboard::_states          %s", gStates ? "found" : "MISSING");
-    JPR_INFO("Keyboard::_inputs          %s", inputs ? "found" : "MISSING");
+    // Report each symbol separately. Which one is missing decides what can be
+    // done about it, so a combined message is no use.
+    JPR_INFO("Keyboard::_states           %s", gStates ? "found" : "MISSING");
+    JPR_INFO("Keyboard::_inputs           %s", inputs ? "found" : "MISSING");
     JPR_INFO("Keyboard::_gameControllerId %s", gControllerId ? "found" : "MISSING");
 
-    // This is exactly the condition the launcher uses to decide whether to
-    // feed the game through these objects at all
-    // (WindowCallbacks::WindowCallbacks, mcpelauncher-client). If it is false,
-    // the launcher routes real key presses through GameActivity instead and
-    // writing these objects reaches nothing — so injection cannot work either,
-    // and saying so plainly beats appearing to run and doing nothing.
-    bool launcherUsesDirectInput = gStates && inputs && gControllerId;
-    if (!launcherUsesDirectInput) {
-        JPR_ERROR("KEY INJECTION UNAVAILABLE on this game version.");
-        JPR_ERROR("The launcher needs all three symbols above to feed keyboard input through them;");
-        JPR_ERROR("with one missing it uses the GameActivity path instead, which this mod cannot reach");
-        JPR_ERROR("without a signature for the game's own input handler. auto_jump_reset will roll its");
-        JPR_ERROR("dice and schedule presses, but nothing will arrive in game.");
-        return false;
+    // This is the condition the launcher itself uses to decide whether to feed
+    // the game through these objects (WindowCallbacks::WindowCallbacks). When
+    // it holds, use them: it is the path the launcher exercises constantly and
+    // needs no code patching.
+    if (gStates && inputs && gControllerId) {
+        gBackend = Backend::DirectSymbols;
+        JPR_INFO("key injection ready via exported Keyboard objects (%s layout)",
+                 gLegacy ? "legacy" : "modern");
+        return true;
     }
 
-    gReady = true;
-    JPR_INFO("keyboard injection ready (%s layout)", gLegacy ? "legacy" : "modern");
-    return true;
+    // Otherwise the launcher is using GameActivity for input, and so must we.
+    JPR_INFO("Keyboard objects unavailable; trying the GameActivity path instead");
+    if (gameactivity::install()) {
+        gBackend = Backend::GameActivity;
+        // Not ready yet: the GameActivity only exists once the game starts.
+        return true;
+    }
+
+    gBackend = Backend::None;
+    JPR_ERROR("KEY INJECTION UNAVAILABLE: neither the exported Keyboard objects nor");
+    JPR_ERROR("GameActivity_onCreate could be used on this build. auto_jump_reset will");
+    JPR_ERROR("schedule presses that go nowhere.");
+    return false;
 }
 
-bool ready() { return gReady; }
+Backend backend() { return gBackend; }
+
+const char* backendName(Backend value) {
+    switch (value) {
+    case Backend::DirectSymbols: return "exported Keyboard objects";
+    case Backend::GameActivity: return "GameActivity onKeyDown";
+    default: return "none";
+    }
+}
+
+bool ready() {
+    if (gBackend == Backend::DirectSymbols)
+        return true;
+    if (gBackend == Backend::GameActivity)
+        return gameactivity::live();
+    return false;
+}
 
 SymbolReport symbols() {
     SymbolReport report;
@@ -155,6 +177,9 @@ SymbolReport symbols() {
     report.inputs = gInputs != nullptr || gLegacyInputs != nullptr;
     report.controllerId = gControllerId != nullptr;
     report.legacyLayout = gLegacy;
+    report.gameActivityOnCreate = gameactivity::symbolFound();
+    report.gameActivityHooked = gameactivity::hooked();
+    report.gameActivityLive = gameactivity::live();
     return report;
 }
 
@@ -170,21 +195,25 @@ bool holding(int keyCode) {
 }
 
 bool gameKeyDown(int keyCode) {
-    if (!gReady || keyCode <= 0 || keyCode > 0xff)
+    if (keyCode <= 0 || keyCode > 0xff)
         return false;
     if (gCapture)
         return gHeld[keyCode & 0xff];
+    // Only the direct path can answer this; GameActivity gives no way to read
+    // back key state, so debug_trigger_key does not work there.
+    if (gBackend != Backend::DirectSymbols || !gStates)
+        return false;
     return gStates[keyCode & 0xff] != 0;
 }
 
 void enableTestCapture(void (*capture)(int, bool)) {
     gCapture = capture;
     gInitialised = true;
-    gReady = capture != nullptr;
+    gBackend = capture ? Backend::DirectSymbols : Backend::None;
 }
 
 void flush() {
-    if (!gReady)
+    if (!ready())
         return;
 
     std::vector<Pending> batch;
@@ -198,6 +227,23 @@ void flush() {
     if (gCapture) {
         for (auto const& item : batch)
             gCapture(item.key, item.down);
+        return;
+    }
+
+    if (gBackend == Backend::GameActivity) {
+        int sent = 0;
+        for (auto const& item : batch) {
+            // Modifier state is tracked locally; the mod never holds one, but
+            // pass what we know so a future module that does behaves right.
+            int metaState = 0;
+            if (gameactivity::send(item.key, item.down, metaState))
+                sent++;
+        }
+        status::countPressDelivered(sent, 0);
+        if (logLevel() <= LogLevel::Trace) {
+            for (auto const& item : batch)
+                JPR_TRACE("%s %s via GameActivity", item.down ? "down" : "up", keyName(item.key));
+        }
         return;
     }
 

@@ -121,17 +121,29 @@ void write() {
         fprintf(file, "  Keyboard::_gameControllerId %s\n", symbols.controllerId ? "found" : "MISSING");
         fprintf(file, "  layout                      %s\n", symbols.legacyLayout ? "legacy" : "modern");
     }
+    fprintf(file, "  GameActivity_onCreate       %s\n",
+            symbols.gameActivityOnCreate ? "found" : "MISSING");
+    if (symbols.gameActivityOnCreate) {
+        fprintf(file, "  GameActivity hook           %s\n", symbols.gameActivityHooked ? "installed" : "FAILED");
+        fprintf(file, "  GameActivity captured       %s\n",
+                symbols.gameActivityLive ? "yes" : "not yet - starts when the game does");
+    }
+    fprintf(file, "  backend            %s\n", keyboard::backendName(keyboard::backend()));
     if (keyboard::ready()) {
         fprintf(file, "  status             READY\n");
     } else if (!symbols.resolved) {
         fprintf(file, "  status             NOT STARTED - mod_init did not get as far as key setup\n");
     } else {
         fprintf(file, "  status             UNAVAILABLE\n");
-        fprintf(file, "  why                One of the Keyboard symbols above is missing. The launcher\n");
-        fprintf(file, "                     only feeds keyboard input through them when all three\n");
-        fprintf(file, "                     resolve; otherwise it uses GameActivity, which this mod\n");
-        fprintf(file, "                     cannot reach without a signature for the game's own input\n");
-        fprintf(file, "                     handler. No setting in jpr.json can work around this.\n");
+        if (keyboard::backend() == keyboard::Backend::GameActivity) {
+            fprintf(file, "  why                The GameActivity path is hooked but the game has not\n");
+            fprintf(file, "                     started yet, so there is no activity to send keys to.\n");
+            fprintf(file, "                     Load a world; this should become READY.\n");
+        } else {
+            fprintf(file, "  why                The exported Keyboard objects are gone on this build and\n");
+            fprintf(file, "                     GameActivity_onCreate could not be used either, so there\n");
+            fprintf(file, "                     is no way in. No setting in jpr.json changes this.\n");
+        }
     }
     fprintf(file, "  presses queued     %llu\n", (unsigned long long)gPressesQueued.load());
     fprintf(file, "  key events written %llu\n", (unsigned long long)gEventsWritten.load());
@@ -161,8 +173,11 @@ void write() {
     fprintf(file, "\nWHAT TO CHECK\n");
     if (!symbols.resolved) {
         fprintf(file, "  Startup did not reach key setup. If this persists, the log will say why.\n");
+    } else if (!keyboard::ready() && keyboard::backend() == keyboard::Backend::GameActivity) {
+        fprintf(file, "  The GameActivity hook is in but the game has not started. Load a world and\n");
+        fprintf(file, "  check this file again - 'GameActivity captured' should read yes.\n");
     } else if (!keyboard::ready()) {
-        fprintf(file, "  Key injection is unavailable - see the three symbols above. Nothing will be\n");
+        fprintf(file, "  Key injection is unavailable - see KEY INJECTION above. Nothing will be\n");
         fprintf(file, "  sent to the game regardless of settings.\n");
     } else if (gHurtEvents.load() == 0) {
         fprintf(file, "  No damage events have arrived. Expected while there is no local_player_hurt\n");

@@ -115,7 +115,7 @@ so a typo shows up in the log instead of silently doing nothing.
 
 ## How it works
 
-### Pressing the key needs no signatures
+### Two ways in, neither needing signatures
 
 The launcher feeds keyboard input to the game by writing two objects that
 `libminecraftpe.so` exports by name (`mcpelauncher-client/src/symbols.cpp`):
@@ -123,9 +123,21 @@ The launcher feeds keyboard input to the game by writing two objects that
 * `Keyboard::_states` — the held state per key
 * `Keyboard::_inputs` — the queue of press/release transitions
 
-Both resolve with `dlsym`, so the jump half of this mod works on any version
-without a single offset. That is also why `inject_mode` exists: it chooses
-whether to write the state array, the event queue, or both.
+Both resolve with `dlsym`, so on versions that still export them the jump half
+works without a single offset. That is what `inject_mode` selects between.
+
+**1.26.45.1 does not export them** — confirmed on arm64-v8a, all three
+missing. On builds like that the launcher delivers input through Android's
+GameActivity instead, and so does the mod: it hooks `GameActivity_onCreate`
+(exported, and already dlsym'd by the launcher) to capture the `GameActivity`
+the launcher passes the game, then calls
+`callbacks->onKeyDown(activity, event)` exactly as the launcher does. Still no
+signature required.
+
+The layout of those structs is mirrored in `include/jpr/game_activity_abi.h`
+and `static_assert`ed against the real AOSP headers in the Android build
+(`src/game_activity_abi_check.cpp`), because a wrong offset would call the
+wrong function pointer rather than fail visibly.
 
 ### Detecting the hit does
 

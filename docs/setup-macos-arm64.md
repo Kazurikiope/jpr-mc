@@ -250,6 +250,28 @@ Find your data root under **Settings → Storage** in the launcher and create
 `mods/` inside *that* directory — do not assume the path. The `.so` files go
 directly in `mods/`, never in a subfolder.
 
+### 1.26.45.1 does not export the Keyboard objects
+
+Confirmed on 1.26.45.1 / arm64-v8a: `Keyboard::_states`, `Keyboard::_inputs`
+and `Keyboard::_gameControllerId` are all gone. The launcher itself therefore
+delivers your real key presses through Android's GameActivity, not through
+those objects.
+
+The mod now follows it there. It hooks `GameActivity_onCreate` — an exported
+symbol the launcher already dlsym's — to capture the `GameActivity` the
+launcher hands the game, then delivers presses with the same
+`callbacks->onKeyDown(activity, event)` call the launcher makes. This needs no
+signature.
+
+Two consequences worth knowing:
+
+* **`status.txt` reads `not yet - starts when the game does` until you load a
+  world.** The GameActivity does not exist until the game starts, so injection
+  becomes `READY` at that point, not at startup.
+* **`debug_trigger_key` cannot work on this path.** GameActivity gives no way
+  to read key state back, so the mod cannot see you press F7. Use
+  `debug_auto_fire_ms` instead.
+
 ### "Installed mods" being greyed out is normal
 
 It is not a sign that anything is broken, and it will not change once jpr is

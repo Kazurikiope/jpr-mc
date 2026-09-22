@@ -17,6 +17,8 @@ set(JPR_CORE_SOURCES
     src/inline_hook_unsupported.cpp
     src/json.cpp
     src/keyboard.cpp
+    src/keyboard_gameactivity.cpp
+    src/game_activity_abi_check.cpp
     src/keycodes.cpp
     src/log.cpp
     src/module.cpp
@@ -31,6 +33,10 @@ set(JPR_CORE_SOURCES
 
 add_library(jpr_core OBJECT ${JPR_CORE_SOURCES})
 target_include_directories(jpr_core PUBLIC include PRIVATE src)
+if(ANDROID)
+    # Only for the compile-time ABI check in game_activity_abi_check.cpp.
+    target_include_directories(jpr_core PRIVATE third_party/game-activity)
+endif()
 target_compile_options(jpr_core PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
 # The mod itself: an Android shared object the launcher dlopen()s.

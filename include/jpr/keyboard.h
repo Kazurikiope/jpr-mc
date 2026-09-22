@@ -14,6 +14,23 @@
 namespace jpr {
 namespace keyboard {
 
+// How presses reach the game.
+enum class Backend {
+    // Nothing usable was found.
+    None,
+    // Write Keyboard::_states / Keyboard::_inputs, the exported objects the
+    // launcher prefers. Available only on versions that still export them.
+    DirectSymbols,
+    // Call GameActivityCallbacks::onKeyDown/onKeyUp, which is what the
+    // launcher falls back to when those symbols are gone. Reached by hooking
+    // the exported GameActivity_onCreate to capture the GameActivity the
+    // launcher passes the game — so it needs no version specific signature.
+    GameActivity,
+};
+
+Backend backend();
+const char* backendName(Backend backend);
+
 enum class InjectMode {
     // Write the held-state array and queue the transition event. Matches what
     // the launcher itself does for a real key press.
@@ -61,6 +78,9 @@ struct SymbolReport {
     bool inputs = false;
     bool controllerId = false;
     bool legacyLayout = false;
+    bool gameActivityOnCreate = false;  // the symbol was found
+    bool gameActivityHooked = false;    // the hook installed
+    bool gameActivityLive = false;      // onCreate ran and handed us callbacks
 };
 SymbolReport symbols();
 
