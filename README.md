@@ -219,4 +219,5 @@ src/modules/     one file per module
 signatures/      version specific address files
 config/          the jpr.json written on first run
 tests/           host tests
+tools/pack-extract/  Windows script to pull packs out of a server/world
 ```

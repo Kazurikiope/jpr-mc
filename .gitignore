@@ -3,3 +3,4 @@ build/
 *.so
 compile_commands.json
 .cache/
+tools/pack-extract/extracted/
